@@ -41,9 +41,13 @@ st.markdown("""
         margin-top: 0px; 
     }
     
-    /* Hide Default Header & Footer */
-    header { visibility: hidden; }
+    /* Hide Default Footer (Keep Header visible for Sidebar toggle) */
     footer { visibility: hidden; }
+    
+    /* Transparent Header Background */
+    [data-testid="stHeader"] {
+        background: transparent;
+    }
 
     /* Compact Navigation */
     div[data-testid="stRadio"] {
@@ -802,7 +806,7 @@ elif page == "Arrhythmia Detection":
                                     # Persist to Database
                                     add_record(
                                         modality="ECG",
-                                        filename=uploaded_ecg.name,
+                                        filename=st.session_state.get('last_uploaded_ecg_name', 'unknown_ecg.csv'),
                                         result=prediction,
                                         confidence=float(confidence),
                                         details="ResNet1D-18 Analysis"
