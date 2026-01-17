@@ -59,6 +59,29 @@ graph TD
     
     Viz --> UI[Dashboard Display]
 ```
+## 📊 Datasets Used
+
+The models in NeuroX were trained on high-quality, open-source medical datasets.
+
+### 1. Chest X-Ray Images (Pneumonia)
+*   **Source**: Kaggle (Paul Mooney)
+*   **Dataset Structure**:
+    *   **Total Images**: 5,863 (JPEG)
+    *   **Categories**: Pneumonia (Viral & Bacterial) vs. Normal
+    *   **Split**: Organized into Training (5,216), Test (624), and Validation (16) sets.
+*   **Imaging Technique**: Anterior-Posterior (AP) chest X-rays selected from retrospective cohorts of pediatric patients of one to five years old.
+*   **Link**: [Chest X-Ray Images (Pneumonia) Dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia)
+
+### 2. PTB-XL ECG Database
+*   **Source**: PhysioNet (Wagner et al.)
+*   **Dataset Overview**:
+    *   **Size**: 21,837 clinical 12-lead ECG records from 18,885 patients.
+    *   **Duration**: 10 seconds per record.
+    *   **Sampling Rates**: Available in 100 Hz and 500 Hz.
+*   **Annotations**: Comprehensive diagnostic statements conformant to SCP-ECG standards (Normal, Myocardial Infarction, ST/T Change, Conduction Disturbance, and Hypertrophy).
+*   **Demographics**: Balanced distribution of male (52%) and female (48%) patients across various age groups.
+*   **Link**: [PTB-XL Database](https://physionet.org/content/ptb-xl/1.0.3/)
+
 
 ## 🚀 Installation & Setup
 
