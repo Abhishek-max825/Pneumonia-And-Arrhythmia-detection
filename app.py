@@ -332,6 +332,141 @@ def preprocess_image(image):
     ])
     return transform(enhanced_img).unsqueeze(0)
 
+def analyze_rr_intervals(signal):
+    """
+    Clinical RR interval analysis for arrhythmia detection.
+    
+    Args:
+        signal: ECG signal array (12, 1000) or (1000,)
+        
+    Returns:
+        dict: {
+            'has_arrhythmia': bool,
+            'rr_coefficient_variation': float,
+            'mean_rr': float,
+            'confidence': float
+        }
+    """
+    from scipy.signal import find_peaks, butter, filtfilt
+    
+    # Use Lead II (index 1) or first available lead
+    if signal.ndim == 2:
+        lead = signal[1] if signal.shape[0] > 1 else signal[0]
+    else:
+        lead = signal.flatten()
+    
+    # Step 1: Baseline wander removal using high-pass filter
+    try:
+        # Remove baseline wander (< 0.5 Hz)
+        # PTB-XL is sampled at 100 Hz
+        fs = 100  # Sampling frequency in Hz
+        nyquist = fs / 2
+        cutoff = 0.5
+        b, a = butter(3, cutoff / nyquist, btype='high')
+        lead_filtered = filtfilt(b, a, lead)
+    except:
+        lead_filtered = lead
+    
+    # Step 2: Normalize signal for robust peak detection
+    # Z-score normalization
+    mean_signal = np.mean(lead_filtered)
+    std_signal = np.std(lead_filtered)
+    if std_signal > 0:
+        lead_normalized = (lead_filtered - mean_signal) / std_signal
+    else:
+        lead_normalized = lead_filtered
+    
+    # Step 3: Detect R peaks with adaptive parameters
+    # For 100 Hz sampling:
+    # - Min heart rate: 40 bpm → 1.5s between beats → 150 samples
+    # - Max heart rate: 180 bpm → 0.33s between beats → 33 samples
+    # - Normal: 60-100 bpm → 0.6-1.0s → 60-100 samples
+    
+    min_distance = 35  # 0.35s minimum (170 bpm max)
+    
+    # Use normalized signal for peak detection
+    # R-peaks should be positive in normalized signal
+    peaks, properties = find_peaks(
+        lead_normalized,
+        height=0.5,  # At least 0.5 std above mean (normalized)
+        distance=min_distance,
+        prominence=0.4  # Require clear prominence
+    )
+    
+    # Validation: Check if we found reasonable number of peaks
+    # For 10-second ECG at 60-100 bpm, expect 10-17 beats
+    if len(peaks) < 5:
+        # Try with more lenient parameters
+        peaks, _ = find_peaks(
+            lead_normalized,
+            height=0.3,
+            distance=min_distance,
+            prominence=0.2
+        )
+    
+    if len(peaks) < 3:
+        # Still not enough peaks - signal too noisy or flat
+        return {
+            'has_arrhythmia': False,
+            'rr_coefficient_variation': 0.0,
+            'mean_rr': 0.0,
+            'confidence': 0.3,
+            'num_peaks': len(peaks),
+            'reason': f'Insufficient peaks detected ({len(peaks)})'
+        }
+    
+    # Step 4: Calculate RR intervals (in samples)
+    rr_intervals = np.diff(peaks)
+    
+    # Remove outliers (potential false peaks)
+    # RR intervals should be between 33-200 samples (0.33-2.0 seconds at 100Hz)
+    valid_rr = rr_intervals[(rr_intervals >= 33) & (rr_intervals <= 200)]
+    
+    if len(valid_rr) < 2:
+        return {
+            'has_arrhythmia': False,
+            'rr_coefficient_variation': 0.0,
+            'mean_rr': 0.0,
+            'confidence': 0.3,
+            'num_peaks': len(peaks),
+            'reason': 'Invalid RR intervals detected'
+        }
+    
+    # Step 5: Statistical analysis
+    mean_rr = np.mean(valid_rr)
+    std_rr = np.std(valid_rr)
+    cv_rr = (std_rr / mean_rr) if mean_rr > 0 else 0  # Coefficient of Variation
+    
+    # Step 6: Clinical thresholds
+    # CV < 0.08 (8%) = Normal sinus rhythm (stable RR)
+    # CV > 0.12 (12%) = Likely arrhythmia (variable RR)
+    # 0.08-0.12 = Borderline
+    
+    if cv_rr < 0.08:
+        has_arrhythmia = False
+        confidence = 0.85  # High confidence in normal
+    elif cv_rr > 0.12:
+        has_arrhythmia = True
+        confidence = 0.80  # High confidence in arrhythmia
+    else:
+        # Borderline - defer to ML model
+        has_arrhythmia = None  # Will use model prediction
+        confidence = 0.50
+    
+    # Calculate heart rate for additional info
+    mean_hr = (fs / mean_rr) * 60  # beats per minute
+    
+    return {
+        'has_arrhythmia': has_arrhythmia,
+        'rr_coefficient_variation': cv_rr,
+        'mean_rr': mean_rr,
+        'mean_hr': mean_hr,
+        'confidence': confidence,
+        'num_peaks': len(peaks),
+        'num_valid_rr': len(valid_rr),
+        'reason': f'RR CV: {cv_rr:.3f}'
+    }
+
 def preprocess_ecg(df):
     # Expecting (1000, 12) or (187, 1) or similar variations
     # Model Input: (B, 12, 1000)
@@ -782,11 +917,26 @@ elif page == "Arrhythmia Detection":
                                     
                                     tensor = tensor.to(device)
                                     
-                                    # Inference
+                                    # CLINICAL ANALYSIS: RR Interval Check (Primary)
+                                    rr_analysis = analyze_rr_intervals(signal_array)
+                                    
+                                    # Model Inference (Secondary)
                                     output = model(tensor)
                                     prob = torch.sigmoid(output).item()
-                                    prediction = "ARRHYTHMIA" if prob > 0.5 else "NORMAL"
-                                    confidence = prob if prob > 0.5 else 1 - prob
+                                    model_prediction = "ARRHYTHMIA" if prob > 0.65 else "NORMAL"  # Raised threshold to 65%
+                                    model_confidence = prob if prob > 0.65 else 1 - prob
+                                    
+                                    # HYBRID DECISION: Clinical rules override weak model predictions
+                                    if rr_analysis['has_arrhythmia'] is not None:
+                                        # RR analysis is conclusive - use it
+                                        prediction = "ARRHYTHMIA" if rr_analysis['has_arrhythmia'] else "NORMAL"
+                                        confidence = rr_analysis['confidence']
+                                        decision_basis = f"RR Analysis ({rr_analysis['reason']})"
+                                    else:
+                                        # RR borderline - use model but reduce confidence
+                                        prediction = model_prediction
+                                        confidence = model_confidence * 0.8  # Reduce confidence for borderline cases
+                                        decision_basis = f"Model (RR borderline: {rr_analysis['reason']})"
                                     
                                     # Explainability
                                     target_layer = model.layer4[-1] 
@@ -800,7 +950,9 @@ elif page == "Arrhythmia Detection":
                                         "signal_array": signal_array,
                                         "cam": cam,
                                         "tensor": tensor.cpu(), # Store on CPU to save GPU RAM
-                                        "timestamp": pd.Timestamp.now()
+                                        "timestamp": pd.Timestamp.now(),
+                                        "rr_analysis": rr_analysis,
+                                        "decision_basis": decision_basis
                                     }
                                     
                                     # Persist to Database
@@ -842,6 +994,39 @@ elif page == "Arrhythmia Detection":
                                 <div class="metric-label">Confidence</div>
                                 <div class="metric-value">{confidence*100:.1f}%</div>
                             </div>""", unsafe_allow_html=True)
+                        
+                        # Clinical Details
+                        rr_info = res.get('rr_analysis', {})
+                        decision_basis = res.get('decision_basis', 'Model prediction')
+                        
+                        st.markdown("### Clinical Analysis")
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-label">RR Variability</div>
+                                <div class="metric-value" style="font-size: 20px;">{rr_info.get('rr_coefficient_variation', 0)*100:.1f}%</div>
+                            </div>""", unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-label">Heart Rate</div>
+                                <div class="metric-value" style="font-size: 20px;">{rr_info.get('mean_hr', 0):.0f} bpm</div>
+                            </div>""", unsafe_allow_html=True)
+                        with c3:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-label">R Peaks</div>
+                                <div class="metric-value" style="font-size: 20px;">{rr_info.get('num_peaks', 'N/A')}</div>
+                            </div>""", unsafe_allow_html=True)
+                        with c4:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-label">Decision Basis</div>
+                                <div class="metric-value" style="font-size: 12px; color: #8B949E;">{decision_basis}</div>
+                            </div>""", unsafe_allow_html=True)
+                        
+                        st.info(f"ℹ️ **Clinical Note:** RR CV < 8% indicates stable rhythm (Normal), > 12% indicates irregular rhythm (Arrhythmia). Current: {rr_info.get('rr_coefficient_variation', 0)*100:.1f}%")
                             
                         # Signal & CAM
                         st.markdown("### Rhythm Visualization (Lead II)")

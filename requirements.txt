@@ -6,6 +6,7 @@ pandas
 numpy
 matplotlib
 scikit-learn
+scipy
 opencv-python-headless
 tqdm
 seaborn

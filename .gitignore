@@ -36,6 +36,7 @@ venv.bak/
 data/
 ecg_testing/
 x-ray_testing/
+ecg_testing_reorganized/
 
 # Database
 patient_history.db
@@ -44,3 +45,11 @@ patient_history.db
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Test files
+test_*.py
+reorganize_*.py
+
+# Test files
+test_*.py
+reorganize_*.py
