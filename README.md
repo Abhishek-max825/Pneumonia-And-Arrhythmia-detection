@@ -18,8 +18,12 @@ By bridging the gap between "Black Box" Deep Learning and clinical trust, NeuroX
 ### 2. Clinical-Grade ECG Interpretation (Time-Series)
 *   **Model**: Custom `ResNet1D-18` (Deep Residual CNN optimized for 1D signals).
 *   **Input Standard**: Supports standard 12-Lead ECG data (PTB-XL / WFDB format).
-*   **Diagnostics**: Classifies rhythms into **Normal Sinus Rhythm** or **Arrhythmia/Abnormality** with high confidence.
-*   **Visualization**: Interactive Matplotlib rendering of Lead II rhythm strips.
+*   **Clinical RR Interval Analysis**: Advanced peak detection algorithm analyzes beat-to-beat timing variability (RR Coefficient of Variation) to detect true arrhythmias.
+    *   **Baseline-wander resistant**: High-pass filtering removes drift artifacts
+    *   **Clinical thresholds**: RR CV < 8% = Normal, > 12% = Arrhythmia
+    *   **Hybrid decision system**: Clinical rules override model predictions for conclusive cases
+*   **Diagnostics**: Classifies rhythms into **Normal Sinus Rhythm** or **Arrhythmia/Abnormality** with high clinical accuracy.
+*   **Visualization**: Interactive Matplotlib rendering of Lead II rhythm strips with attention heatmaps.
 
 ### 3. Patient History Dashboard
 *   **Local Database**: Built-in SQLite database automatically isolates and persists patient records—no internet required.
@@ -31,6 +35,7 @@ By bridging the gap between "Black Box" Deep Learning and clinical trust, NeuroX
     *   Patient ID & Timestamp
     *   Original Scan + AI Heatmap (side-by-side)
     *   Diagnostic Confidence & Conclusion
+    *   **ECG Reports**: RR Variability, Heart Rate, R Peaks, Decision Basis
     *   Physician Notes Section
 
 ---
@@ -100,6 +105,7 @@ The models in NeuroX were trained on high-quality, open-source medical datasets.
 2.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
+    # Includes: PyTorch, Streamlit, OpenCV, scipy, wfdb, fpdf
     ```
 
 3.  **Run the Application**:
