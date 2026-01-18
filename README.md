@@ -42,10 +42,10 @@ NeuroX runs entirely locally (Edge AI), prioritizing patient data privacy.
 ```mermaid
 graph TD
     User[Clinician] -->|Uploads X-Ray/ECG| App(Streamlit Interface)
-    App -->|Preprocessing| Pre{Modality?}
+    App -->|Preprocessing| Pre{"Modality?"}
     
-    Pre -->|Image (CLAHE)| CNN[EfficientNet-B0]
-    Pre -->|Signal (Denoising)| RNN[ResNet1D-18]
+    Pre -->|"Image (CLAHE)"| CNN[EfficientNet-B0]
+    Pre -->|"Signal (Denoising)"| RNN[ResNet1D-18]
     
     CNN -->|Feature Maps| GradCAM[XAI Engine]
     CNN -->|Logits| Pred1[Pneumonia Probability]
