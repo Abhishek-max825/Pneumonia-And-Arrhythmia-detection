@@ -529,7 +529,7 @@ def preprocess_ecg(df):
     return tensor, signal # Signal is (12, 1000)
 
 
-def create_pdf_report(prediction, confidence, model_name):
+def create_pdf_report(prediction, confidence, model_name, rr_analysis=None, decision_basis=None):
     class PDF(FPDF):
         def header(self):
             # Banner
@@ -604,6 +604,47 @@ def create_pdf_report(prediction, confidence, model_name):
     pdf.cell(0, 8, f"Confidence Score: {confidence}", ln=True)
     
     pdf.set_y(box_y + 45 + 10) # Move below box
+    
+    # Clinical Analysis Section (for ECG reports)
+    if rr_analysis:
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, "Clinical Analysis", ln=True)
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(5)
+        
+        # Clinical metrics table
+        pdf.set_font("Arial", '', 11)
+        
+        # RR Variability
+        pdf.cell(60, 8, "RR Variability:", 0, 0)
+        rr_cv = rr_analysis.get('rr_coefficient_variation', 0) * 100
+        pdf.cell(0, 8, f"{rr_cv:.1f}%", ln=True)
+        
+        # Heart Rate
+        pdf.cell(60, 8, "Heart Rate:", 0, 0)
+        hr = rr_analysis.get('mean_hr', 0)
+        pdf.cell(0, 8, f"{hr:.0f} bpm", ln=True)
+        
+        # R Peaks
+        pdf.cell(60, 8, "R Peaks Detected:", 0, 0)
+        peaks = rr_analysis.get('num_peaks', 'N/A')
+        pdf.cell(0, 8, f"{peaks}", ln=True)
+        
+        # Decision Basis
+        if decision_basis:
+            pdf.cell(60, 8, "Decision Basis:", 0, 0)
+            pdf.cell(0, 8, decision_basis, ln=True)
+        
+        pdf.ln(5)
+        
+        # Clinical note
+        pdf.set_font("Arial", 'I', 9)
+        pdf.set_text_color(100, 100, 100)
+        pdf.multi_cell(0, 5, f"Clinical Note: RR Coefficient of Variation < 8% indicates stable rhythm (Normal), > 12% indicates irregular rhythm (Arrhythmia). Current measurement: {rr_cv:.1f}%")
+        
+        pdf.ln(5)
     
     # Disclaimer
     pdf.set_text_color(100, 100, 100)
@@ -1055,9 +1096,15 @@ elif page == "Arrhythmia Detection":
                         st.image(buf, width="stretch") # Using 'stretch' per recommendation
                         plt.close(fig)
 
-                        # Report Logic
+                        # Report Section
                         st.markdown("<div style='height: 25px'></div>", unsafe_allow_html=True)
-                        pdf_bytes = create_pdf_report(prediction, f"{confidence*100:.2f}%", "ECGNet")
+                        pdf_bytes = create_pdf_report(
+                            prediction, 
+                            f"{confidence*100:.2f}%", 
+                            "ECGNet (ResNet1D-18)",
+                            rr_analysis=rr_info,
+                            decision_basis=decision_basis
+                        )
                         st.download_button(
                             label="📄 Download Diagnostic Report",
                             data=pdf_bytes,
